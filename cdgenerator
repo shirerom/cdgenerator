@@ -1,0 +1,381 @@
+#!/usr/bin/php
+<?php
+
+//
+// cdgenerator
+//
+// genenerates NSManagedObject subclass with a given object model (a
+// .xcdatamodel directory) like XCode(TM) does
+//
+
+// Copyright (c) 2016 Johannes Bauer
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+// IN THE SOFTWARE.
+	
+error_reporting(E_ALL);
+
+define("MODEL_VERSION_FILE", ".xccurrentversion");
+define("MODEL_FILE", "contents");
+define("SUPER_CLASS_DEFAULT_NAME", "NSManagedObject");
+
+$classHeaderTemplate = <<< TMPL
+//
+//  {CLASS_NAME}.h
+//
+//  Created by cdgenerator © 2016 Johannes Bauer
+//
+
+#import <Foundation/Foundation.h>
+#import <CoreData/CoreData.h>
+
+{RELATED_CLASSES}
+
+NS_ASSUME_NONNULL_BEGIN
+
+@interface {CLASS_NAME} : {SUPER_CLASS_NAME}
+
+// Insert code here to declare functionality of your managed object subclass
+
+@end
+
+NS_ASSUME_NONNULL_END
+
+#import "{CLASS_NAME}+CoreDataProperties.h"
+
+TMPL;
+
+$classSourceTemplate = <<< TMPL
+//
+//  {CLASS_NAME}.m
+//
+//  Created by cdgenerator © 2016 Johannes Bauer
+//
+
+#import "{CLASS_NAME}.h"
+
+@implementation {CLASS_NAME}
+
+// Insert code here to add functionality to your managed object subclass
+
+@end
+
+TMPL;
+
+$categoryHeaderTemplate = <<< TMPL
+//
+//  {CLASS_NAME}+CoreDataProperties.h
+//
+//  Created by cdgenerator © 2016 Johannes Bauer
+//
+
+#import "{CLASS_NAME}.h"
+
+NS_ASSUME_NONNULL_BEGIN
+
+@interface {CLASS_NAME} (CoreDataProperties)
+
+{CLASS_PROPERTIES}
+@end
+
+@interface {CLASS_NAME} (CoreDataGeneratedAccessors)
+
+{CLASS_ACCESSORS}
+@end
+
+NS_ASSUME_NONNULL_END
+
+TMPL;
+
+$categorySourceTemplate = <<< TMPL
+//
+//  {CLASS_NAME}+CoreDataProperties.m
+//
+//  Created by cdgenerator © 2016 Johannes Bauer
+//
+
+#import "{CLASS_NAME}+CoreDataProperties.h"
+
+@implementation {CLASS_NAME} (CoreDataProperties)
+
+{CLASS_SOURCE_PROPERTIES}
+@end
+
+TMPL;
+
+$accessorBlockTemplate = <<< TMPL
+- (void)add{ENTITY_NAME}Object:({CLASS_NAME} *)value;
+- (void)remove{ENTITY_NAME}Object:({CLASS_NAME} *)value;
+- (void)add{ENTITY_NAME}:(NSSet<{CLASS_NAME} *> *)values;
+- (void)remove{ENTITY_NAME}:(NSSet<{CLASS_NAME} *> *)values;
+
+
+TMPL;
+
+$usage = <<< USAGE_END
+usage: cdgenerator -m <model> [-o <dir>] [-e <entity>] [-d] [-f] [-h]
+
+	-m <model>  model directory
+	-o <dir>    output directory (Default: ".")
+	-e <entity> processes named entity only
+	-d          dry-run: nothing is writen, output to <stdout> 
+	-f          force: overwrites existing header and source files
+	-h          help: shows this text and exits
+
+
+USAGE_END;
+
+$attributeTypeMap = [
+	"Integer 16" => "NSNumber",
+	"Integer 32" => "NSNumber",
+	"Integer 64" => "NSNumber",
+	"String" => "NSString",
+	"Date" => "NSDate",
+	"Boolean" => "NSNumber",
+	"Double" => "NSNumber",
+	"Float" => "NSNumber",
+	"Decimal" => "NSDecimalNumber",
+	"Transformable" => "id",
+];
+
+function getCurrentModel($modelPath) {
+	
+	$version = file_get_contents("{$modelPath}/" . MODEL_VERSION_FILE);
+	
+	if ($version === false) {
+		die("fatal: version file not found\n");
+	}
+	
+	$xml = new SimpleXMLElement($version);
+	
+	return $xml->dict->string[0];
+}
+
+function getModel($modelPath) {
+	
+	$currentModel = getCurrentModel($modelPath);
+	
+	$modelXMLString = file_get_contents("{$modelPath}/{$currentModel}/" . MODEL_FILE);
+	
+	if ($modelXMLString === false or strlen($modelXMLString) === 0) {
+		die("fatal: no model file found or file empty\n");
+	}
+	
+	return new SimpleXMLElement($modelXMLString);
+}
+
+function getClassName($model, $entityName) {
+	
+	foreach ($model->entity as $entity) {
+		
+		if (((string)$entity[0]["name"]) == $entityName) {
+			return (string)$entity[0]["representedClassName"];
+		}
+	}
+}
+
+function getSourceFile($template, $className, $superClassName, $properties, $sourceProperties, $accesssors, $relatedClasses) {
+	
+	$template = preg_replace("/\{CLASS_NAME\}/", $className, $template);
+	$template = preg_replace("/\{SUPER_CLASS_NAME\}/", $superClassName, $template);
+	$template = preg_replace("/\{CLASS_PROPERITES\}/", $properties, $template);
+	$template = preg_replace("/\{CLASS_SOURCE_PROPERITES\}/", $sourceProperties, $template);
+	$template = preg_replace("/\{CLASS_ACCESSORS\}/", $accessors, $template);
+	$template = preg_replace("/\{RELATED_CLASSES\}/", $relatedClasses, $template);
+	
+	return $template;
+}
+
+function getReplacedTemplate($template, array $preplacements) {
+	
+	foreach ($preplacements as $variable => $replacement) {		
+		$template = preg_replace("/\{{$variable}\}/", $replacement, $template);
+	}
+	
+	return $template;
+}
+
+function usage() {
+	
+	global $usage;
+	
+	echo $usage;
+}
+
+function checkAndUpdateOpt(&$opt) {
+
+	if (!isset($opt["m"])) {
+		usage();
+		die();
+ 	}
+	
+	if (isset($opt["h"])) {
+		usage();
+		exit();
+	}
+	
+	if (!isset($opt["o"])) {
+		$opt["o"] = ".";
+	}
+}
+
+$opt = getopt("dfhm:o:e:");
+
+checkAndUpdateOpt($opt);
+
+$modelPath = realpath($opt["m"]);
+$outputPath = realpath($opt["o"]);
+
+$XML = getModel($modelPath);
+
+foreach ($XML->entity as $entity) {
+
+	$entityName = (string)$entity[0]['name'];
+	$className = (string)$entity[0]['representedClassName'];
+	$parentEntityName = (string)$entity[0]['parentEntity'];
+	$superClassName = SUPER_CLASS_DEFAULT_NAME;
+
+	if (isset($opt["e"]) and $entityName != $opt["e"]) {
+		continue;
+	}
+	
+	if (strlen($parentEntityName) > 0) {
+		$superClassName = getClassName($XML, $parentEntityName);
+	}
+
+	$headerProperties = "";
+	$sourceProperties = "";
+	$accessors = "";
+	$relatedClasses = [];
+	
+	// Properties
+	foreach ($entity->attribute as $property) {
+		
+		if (!isset($attributeTypeMap[(string)$property[0]["attributeType"]])) {
+			die("fatal: unknown attribute type {$property[0]["attributeType"]}\n");
+		}
+		
+		$propertyName = (string)$property[0]["name"];
+		$propertyType = $attributeTypeMap[(string)$property[0]["attributeType"]];
+		
+		if ($propertyType == "id") {
+			$headerProperties .= "@property (nullable, nonatomic, retain) id {$propertyName};\n";
+		}
+		
+		else {
+			$headerProperties .= "@property (nullable, nonatomic, retain) {$propertyType} *{$propertyName};\n";
+		}
+		
+		$sourceProperties .= "@dynamic {$propertyName};\n";
+	}
+	
+	// Relations
+	foreach ($entity->relationship as $relation) {
+		
+		$relationName = (string)$relation[0]["name"];
+		$relationEntityName = (string)$relation[0]["inverseEntity"];
+		$relationClassName = getClassName($XML, $relationEntityName);
+		$isToMany = isset($relation[0]["toMany"]);
+
+		if ($isToMany) {
+			
+			$headerProperties .= "@property (nullable, nonatomic, retain) NSSet<{$relationClassName} *> *{$relationName};\n";
+			
+			$accessors .= getReplacedTemplate($accessorBlockTemplate, [
+				"CLASS_NAME" => $relationClassName,
+				"ENTITY_NAME" => ucfirst($relationName)
+			]);			
+		}
+		
+		else {
+			$headerProperties .= "@property (nullable, nonatomic, retain) {$relationClassName} *{$relationName};\n";			
+		}
+		
+		$sourceProperties .= "@dynamic {$relationName};\n";
+		
+		$relatedClasses[$relationClassName] = true;
+	}
+
+	$relatedClassesString = "";
+	
+	if (count($relatedClasses) > 0) {
+		$relatedClassesString = sprintf("@class %s;", implode(", ", array_keys($relatedClasses)));
+	}
+	
+	// Class header
+	$classHeader = getReplacedTemplate($classHeaderTemplate, [
+		"CLASS_NAME" => $className,
+		"SUPER_CLASS_NAME" => $superClassName,
+		"RELATED_CLASSES" => $relatedClassesString
+	]);
+		
+	// Class source
+	$classSource = getReplacedTemplate($classSourceTemplate, [
+		"CLASS_NAME" => $className,
+		"SUPER_CLASS_NAME" => $superClassName,
+		"CLASS_PROPERTIES" => $headerProperties,
+		"CLASS_SOURCE_PROPERITES" => $className,
+		"CLASS_ACCESSORS" => $className,
+		"RELATED_CLASSES" => $className
+	]);
+	
+	// Category header
+	$categoryHeader = getReplacedTemplate($categoryHeaderTemplate, [
+		"CLASS_NAME" => $className,
+		"CLASS_PROPERTIES" => $headerProperties,
+		"CLASS_ACCESSORS" => $accessors
+	]);
+		
+	// Category source
+	$categorySource = getReplacedTemplate($categorySourceTemplate, [
+		"CLASS_NAME" => $className,
+		"CLASS_SOURCE_PROPERTIES" => $sourceProperties
+	]);
+	
+	if (isset($opt["d"])) {
+			
+		echo $classHeader;
+		echo "-------------------------------------------------------------------\n";
+		echo $classSource;
+		echo "-------------------------------------------------------------------\n";
+		echo $categoryHeader;
+		echo "-------------------------------------------------------------------\n";
+		echo $categorySource;
+		echo "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n";
+		
+		exit();
+	}
+	
+	$classHeaderFilename = "{$className}.h";
+	$classSourceFilename = "{$className}.m";
+	$categoryHeaderFilename = "{$className}+CoreDataProperties.h";
+	$categorySourceFilename = "{$className}+CoreDataProperties.m";
+	
+	if (!file_exists("{$outputPath}/{$classHeaderFilename}") or isset($opt["f"])) {
+		file_put_contents("{$outputPath}/{$classHeaderFilename}", $classHeader);
+	}
+	
+	if (!file_exists("{$outputPath}/{$classSourceFilename}") or isset($opt["f"])) {
+		file_put_contents("{$outputPath}/{$classSourceFilename}", $classSource);
+	}
+	
+	file_put_contents("{$outputPath}/{$categoryHeaderFilename}", $categoryHeader);
+	file_put_contents("{$outputPath}/{$categorySourceFilename}", $categorySource);
+}
+
+
