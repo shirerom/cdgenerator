@@ -127,6 +127,16 @@ $accessorBlockTemplate = <<< TMPL
 
 TMPL;
 
+$headerPropertyTemplate = "@property (nullable, nonatomic, retain) {PROPERTY_TYPE} {PROPERTY_NAME};\n";
+
+$sourcePropertyTemplate = "@dynamic {PROPERTY_NAME};\n";
+
+$headerToManyRelationTemplate = "@property (nullable, nonatomic, retain) NSSet<{RELATION_CLASS_NAME} *> *{RELATION_NAME};\n";
+
+$headerToOneRelationTemplate = "@property (nullable, nonatomic, retain) {RELATION_CLASS_NAME} *{RELATION_NAME};\n";
+
+$relatedClassesTemplate = "@class {RELATED_CLASSES};";
+
 $usage = <<< USAGE_END
 usage: cdgenerator -m <model> [-o <dir>] [-e <entity>] [-d] [-f] [-h]
 
@@ -187,18 +197,6 @@ function getClassName($model, $entityName) {
 			return (string)$entity[0]["representedClassName"];
 		}
 	}
-}
-
-function getSourceFile($template, $className, $superClassName, $properties, $sourceProperties, $accesssors, $relatedClasses) {
-	
-	$template = preg_replace("/\{CLASS_NAME\}/", $className, $template);
-	$template = preg_replace("/\{SUPER_CLASS_NAME\}/", $superClassName, $template);
-	$template = preg_replace("/\{CLASS_PROPERITES\}/", $properties, $template);
-	$template = preg_replace("/\{CLASS_SOURCE_PROPERITES\}/", $sourceProperties, $template);
-	$template = preg_replace("/\{CLASS_ACCESSORS\}/", $accessors, $template);
-	$template = preg_replace("/\{RELATED_CLASSES\}/", $relatedClasses, $template);
-	
-	return $template;
 }
 
 function getReplacedTemplate($template, array $preplacements) {
@@ -274,14 +272,24 @@ foreach ($XML->entity as $entity) {
 		$propertyType = $attributeTypeMap[(string)$property[0]["attributeType"]];
 		
 		if ($propertyType == "id") {
-			$headerProperties .= "@property (nullable, nonatomic, retain) id {$propertyName};\n";
+			
+			$headerProperties .= getReplacedTemplate($headerPropertyTemplate, [
+				"PROPERTY_TYPE" => "id",
+				"PROPERTY_NAME" => $propertyName
+			]);
 		}
 		
 		else {
-			$headerProperties .= "@property (nullable, nonatomic, retain) {$propertyType} *{$propertyName};\n";
+			
+			$headerProperties .= getReplacedTemplate($headerPropertyTemplate, [
+				"PROPERTY_TYPE" => $propertyType,
+				"PROPERTY_NAME" => "*{$propertyName}"
+			]);
 		}
 		
-		$sourceProperties .= "@dynamic {$propertyName};\n";
+		$sourceProperties .= getReplacedTemplate($sourcePropertyTemplate, [
+			"PROPERTY_NAME" => $propertyName
+		]);
 	}
 	
 	// Relations
@@ -294,7 +302,10 @@ foreach ($XML->entity as $entity) {
 
 		if ($isToMany) {
 			
-			$headerProperties .= "@property (nullable, nonatomic, retain) NSSet<{$relationClassName} *> *{$relationName};\n";
+			$headerProperties .= getReplacedTemplate($headerToManyRelationTemplate, [
+				"RELATION_CLASS_NAME" => $relationClassName,
+				"RELATION_NAME" => $relationName
+			]);
 			
 			$accessors .= getReplacedTemplate($accessorBlockTemplate, [
 				"CLASS_NAME" => $relationClassName,
@@ -303,10 +314,16 @@ foreach ($XML->entity as $entity) {
 		}
 		
 		else {
-			$headerProperties .= "@property (nullable, nonatomic, retain) {$relationClassName} *{$relationName};\n";			
+			
+			$headerProperties .= getReplacedTemplate($headerToOneRelationTemplate, [
+				"RELATION_CLASS_NAME" => $relationClassName,
+				"RELATION_NAME" => $relationName
+			]);
 		}
 		
-		$sourceProperties .= "@dynamic {$relationName};\n";
+		$sourceProperties .= getReplacedTemplate($sourcePropertyTemplate, [
+			"PROPERTY_NAME" => $relationName
+		]);
 		
 		$relatedClasses[$relationClassName] = true;
 	}
@@ -314,7 +331,9 @@ foreach ($XML->entity as $entity) {
 	$relatedClassesString = "";
 	
 	if (count($relatedClasses) > 0) {
-		$relatedClassesString = sprintf("@class %s;", implode(", ", array_keys($relatedClasses)));
+		$relatedClassesString = getReplacedTemplate($relatedClassesTemplate, [
+			"RELATED_CLASSES" => implode(", ", array_keys($relatedClasses))
+		]);
 	}
 	
 	// Class header
