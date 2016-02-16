@@ -1,6 +1,10 @@
 # cdgenerator
 
-cdgenerator is a PHP script and genenerates NSManagedObject subclass with a given object model (a .xcdatamodel directory) like XCode(TM) does
+cdgenerator is a PHP script and genenerates NSManagedObject subclass with a given object model (a .xcdatamodel directory) like Xcode does
+
+# Requirements
+
+PHP
 
 # Usage
 
