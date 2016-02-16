@@ -4,8 +4,8 @@
 //
 // cdgenerator
 //
-// genenerates NSManagedObject subclass with a given object model (a
-// .xcdatamodel directory) like XCode(TM) does
+// genenerates NSManagedObject subclasses with a given object model (a
+// .xcdatamodel directory) like Xcode does
 //
 
 // Copyright (c) 2016 Johannes Bauer
@@ -151,16 +151,17 @@ usage: cdgenerator -m <model> [-o <dir>] [-e <entity>] [-d] [-f] [-h]
 USAGE_END;
 
 $attributeTypeMap = [
+	"Binary" => "NSData",
+	"Boolean" => "NSNumber",
+	"Date" => "NSDate",
+	"Decimal" => "NSDecimalNumber",
+	"Double" => "NSNumber",
+	"Float" => "NSNumber",
 	"Integer 16" => "NSNumber",
 	"Integer 32" => "NSNumber",
 	"Integer 64" => "NSNumber",
 	"String" => "NSString",
-	"Date" => "NSDate",
-	"Boolean" => "NSNumber",
-	"Double" => "NSNumber",
-	"Float" => "NSNumber",
-	"Decimal" => "NSDecimalNumber",
-	"Transformable" => "id",
+	"Transformable" => "id"
 ];
 
 function getCurrentModel($modelPath) {
@@ -258,7 +259,7 @@ foreach ($XML->entity as $entity) {
 
 	$headerProperties = "";
 	$sourceProperties = "";
-	$accessors = "";
+	$headerAccessors = "";
 	$relatedClasses = [];
 	
 	// Properties
@@ -307,7 +308,7 @@ foreach ($XML->entity as $entity) {
 				"RELATION_NAME" => $relationName
 			]);
 			
-			$accessors .= getReplacedTemplate($accessorBlockTemplate, [
+			$headerAccessors .= getReplacedTemplate($accessorBlockTemplate, [
 				"CLASS_NAME" => $relationClassName,
 				"ENTITY_NAME" => ucfirst($relationName)
 			]);			
@@ -357,7 +358,7 @@ foreach ($XML->entity as $entity) {
 	$categoryHeader = getReplacedTemplate($categoryHeaderTemplate, [
 		"CLASS_NAME" => $className,
 		"CLASS_PROPERTIES" => $headerProperties,
-		"CLASS_ACCESSORS" => $accessors
+		"CLASS_ACCESSORS" => $headerAccessors
 	]);
 		
 	// Category source
